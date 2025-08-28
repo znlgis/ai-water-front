@@ -1,56 +1,76 @@
-<!--
-  水务智能前端系统主应用组件
-  实现三栏式布局：左侧图层管理、中间地图、右侧AI助手
--->
 <template>
-  <div class="app-layout">
-    <!-- 应用标题栏 -->
-    <AppHeader />
-    
-    <!-- 主体内容区域 -->
-    <div class="app-body">
+  <div class="app-container">
+    <!-- 主要内容区域，没有顶部标题栏 -->
+    <div class="main-content">
       <!-- 左侧图层管理面板 -->
-      <LayerPanel 
-        :collapsed="leftPanelCollapsed" 
-        @toggle="toggleLeftPanel"
-      />
-      
-      <!-- 中间地图区域 -->
-      <div class="main-content">
-        <DemoMap />
+      <div class="left-panel">
+        <LayerPanel />
       </div>
-      
+
+      <!-- 中间地图区域 -->
+      <div class="map-container">
+        <DemoMap />
+        <!-- 底部状态栏只在地图区域显示 -->
+        <AppFooter />
+      </div>
+
       <!-- 右侧AI助手面板 -->
-      <AIAssistantPanel 
-        :collapsed="rightPanelCollapsed" 
-        @toggle="toggleRightPanel"
-      />
+      <div class="right-panel">
+        <AIAssistantPanel />
+      </div>
     </div>
-    
-    <!-- 底部状态栏 -->
-    <AppFooter />
   </div>
 </template>
 
-<script setup>
-import { ref } from 'vue';
-import DemoMap from './components/DemoMap.vue';
-import AppHeader from './components/layout/AppHeader.vue';
-import AppFooter from './components/layout/AppFooter.vue';
-import LayerPanel from './components/panels/LayerPanel.vue';
-import AIAssistantPanel from './components/panels/AIAssistantPanel.vue';
+<script>
+import DemoMap from './components/DemoMap.vue'
+import LayerPanel from './components/panels/LayerPanel.vue'
+import AIAssistantPanel from './components/panels/AIAssistantPanel.vue'
+import AppFooter from './components/layout/AppFooter.vue'
 
-// 面板折叠状态
-const leftPanelCollapsed = ref(false);
-const rightPanelCollapsed = ref(false);
-
-// 切换左侧面板
-const toggleLeftPanel = () => {
-  leftPanelCollapsed.value = !leftPanelCollapsed.value;
-};
-
-// 切换右侧面板
-const toggleRightPanel = () => {
-  rightPanelCollapsed.value = !rightPanelCollapsed.value;
-};
+export default {
+  name: 'App',
+  components: {
+    DemoMap,
+    LayerPanel,
+    AIAssistantPanel,
+    AppFooter
+  }
+}
 </script>
+
+<style scoped>
+.app-container {
+  height: 100vh;
+  width: 100vw;
+  display: flex;
+  flex-direction: column;
+}
+
+.main-content {
+  flex: 1;
+  display: flex;
+  height: 100%;
+}
+
+.left-panel {
+  width: 300px;
+  background-color: #f5f5f5;
+  border-right: 1px solid #ddd;
+  overflow-y: auto;
+}
+
+.map-container {
+  flex: 1;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+.right-panel {
+  width: 350px;
+  background-color: #f8f9fa;
+  border-left: 1px solid #ddd;
+  overflow-y: auto;
+}
+</style>
