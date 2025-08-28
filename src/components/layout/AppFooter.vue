@@ -11,30 +11,10 @@
         <span class="label">缩放级别:</span>
         <span class="value">{{ zoomLevel }}</span>
       </div>
-
-      <div class="status-item">
-        <span class="label">当前图层:</span>
-        <span class="value">{{ currentLayer }}</span>
-      </div>
-
-      <!-- 数据状态 -->
-      <div class="status-item">
-        <span class="label">数据更新:</span>
-        <span class="value">{{ lastUpdate }}</span>
-      </div>
-
-      <!-- 连接状态 -->
-      <div class="status-item">
-        <span class="label">连接状态:</span>
-        <span class="value" :class="connectionStatusClass">{{ connectionStatus }}</span>
-      </div>
     </div>
 
     <!-- 右侧操作按钮 -->
     <div class="footer-actions">
-      <button @click="refreshData" class="action-btn" title="刷新数据">
-        <span class="icon">🔄</span>
-      </button>
       <button @click="toggleFullscreen" class="action-btn" title="全屏">
         <span class="icon">⛶</span>
       </button>
@@ -43,41 +23,87 @@
 </template>
 
 <script>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
+import { mapInstance } from '../../mapInstance.js'
+import { toLonLat } from 'ol/proj'
 
 export default {
   name: 'AppFooter',
   setup() {
-    const coordinates = ref('116.4074°E, 39.9042°N')
-    const zoomLevel = ref(10)
-    const currentLayer = ref('OpenStreetMap')
-    const lastUpdate = ref('')
-    const connectionStatus = ref('已连接')
+    // 初始占位
+    const coordinates = ref('--')
+    const zoomLevel = ref('--')
 
-    // 连接状态样式
-    const connectionStatusClass = computed(() => {
-      return {
-        'status-connected': connectionStatus.value === '已连接',
-        'status-disconnected': connectionStatus.value === '断开连接',
-        'status-connecting': connectionStatus.value === '连接中'
+    let pointerMoveKey = null
+    let viewChangeKey = null
+    let mapMoveEndKey = null
+
+    const formatCoord = (lon, lat) => {
+      // 保留 4 位小数
+      const ew = lon >= 0 ? 'E' : 'W'
+      const ns = lat >= 0 ? 'N' : 'S'
+      return `${Math.abs(lon).toFixed(4)}°${ew}, ${Math.abs(lat).toFixed(4)}°${ns}`
+    }
+
+    const attachListeners = (map) => {
+      if (!map) return
+      const view = map.getView()
+      // 初始缩放
+      if (view) {
+        zoomLevel.value = view.getZoom()?.toFixed(0)
       }
-    })
-
-    // 更新时间
-    const updateTime = () => {
-      const now = new Date()
-      lastUpdate.value = now.toLocaleTimeString('zh-CN', {
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit'
+      // 鼠标移动获取坐标（WebMercator -> WGS84）
+      pointerMoveKey = map.on('pointermove', (evt) => {
+        if (!evt.coordinate) return
+        const [lon, lat] = toLonLat(evt.coordinate)
+        coordinates.value = formatCoord(lon, lat)
+      })
+      // 缩放变化监听
+      viewChangeKey = view.on('change:resolution', () => {
+        zoomLevel.value = view.getZoom()?.toFixed(0)
+      })
+      // 兼容拖拽或其他导致缩放变化的事件
+      mapMoveEndKey = map.on('moveend', () => {
+        zoomLevel.value = view.getZoom()?.toFixed(0)
       })
     }
 
-    // 刷新数据
-    const refreshData = () => {
-      console.log('刷新数据')
-      updateTime()
+    const tryInit = () => {
+      if (mapInstance) {
+        attachListeners(mapInstance)
+        return true
+      }
+      return false
     }
+
+    let retryTimer = null
+
+    onMounted(() => {
+      // 等待 mapInstance 可用（DemoMap 挂载后才会注入）
+      if (!tryInit()) {
+        retryTimer = setInterval(() => {
+          if (tryInit()) {
+            clearInterval(retryTimer)
+            retryTimer = null
+          }
+        }, 200)
+      }
+    })
+
+    onUnmounted(() => {
+      if (retryTimer) clearInterval(retryTimer)
+      // 清理事件
+      try {
+        if (mapInstance) {
+          if (pointerMoveKey) mapInstance.un('pointermove', pointerMoveKey.listener || pointerMoveKey)
+          if (mapMoveEndKey) mapInstance.un('moveend', mapMoveEndKey.listener || mapMoveEndKey)
+          const view = mapInstance.getView && mapInstance.getView()
+          if (view && viewChangeKey) view.un('change:resolution', viewChangeKey.listener || viewChangeKey)
+        }
+      } catch (e) {
+        // 忽略清理错误
+      }
+    })
 
     // 切换全屏
     const toggleFullscreen = () => {
@@ -88,29 +114,9 @@ export default {
       }
     }
 
-    // 定时器ID
-    let intervalId = null
-
-    onMounted(() => {
-      updateTime()
-      // 每30秒更新一次时间
-      intervalId = setInterval(updateTime, 30000)
-    })
-
-    onUnmounted(() => {
-      if (intervalId) {
-        clearInterval(intervalId)
-      }
-    })
-
     return {
       coordinates,
       zoomLevel,
-      currentLayer,
-      lastUpdate,
-      connectionStatus,
-      connectionStatusClass,
-      refreshData,
       toggleFullscreen
     }
   }
