@@ -6,44 +6,46 @@
   3. 提供图层控制、缩放、上下文菜单等地图控件
 -->
 <template>
-  <!-- OpenLayers地图容器 -->
-  <Map.OlMap id="map" ref="mapRef" :controls="[]">
-    <!-- 地图视图配置：中心点、投影、缩放级别 -->
-    <Map.OlView
-        ref="view"
-        :center="center"
-        :projection="projection"
-        :zoom="zoom"
-    />
+  <div class="map-container">
+    <!-- OpenLayers地图容器 -->
+    <Map.OlMap id="map" ref="mapRef" :controls="[]">
+      <!-- 地图视图配置：中心点、投影、缩放级别 -->
+      <Map.OlView
+          ref="view"
+          :center="center"
+          :projection="projection"
+          :zoom="zoom"
+      />
 
-    <!-- 动态图层组：通过GeoServer API获取的图层组 -->
-    <Layers.OlLayerGroup v-for="group in dynamicLayerGroupList" :key="group.name" :title="group.name"
-                         :visible="group.visible">
-      <!-- 图层组内的瓦片图层 -->
-      <Layers.OlTileLayer v-for="layer in group.layers" :key="layer.name" :title="layer.name" :visible="layer.visible">
+      <!-- 动态图层组：通过GeoServer API获取的图层组 -->
+      <Layers.OlLayerGroup v-for="group in dynamicLayerGroupList" :key="group.name" :title="group.name"
+                           :visible="group.visible">
+        <!-- 图层组内的瓦片图层 -->
+        <Layers.OlTileLayer v-for="layer in group.layers" :key="layer.name" :title="layer.name" :visible="layer.visible">
+          <Sources.OlSourceTileWms :layers="layer.name" :url="layer.url"/>
+        </Layers.OlTileLayer>
+      </Layers.OlLayerGroup>
+
+      <!-- 动态图层：通过GeoServer API获取的单独图层 -->
+      <Layers.OlTileLayer v-for="layer in dynamicLayerList" :key="layer.name" :title="layer.name"
+                          :visible="layer.visible">
         <Sources.OlSourceTileWms :layers="layer.name" :url="layer.url"/>
       </Layers.OlTileLayer>
-    </Layers.OlLayerGroup>
 
-    <!-- 动态图层：通过GeoServer API获取的单独图层 -->
-    <Layers.OlTileLayer v-for="layer in dynamicLayerList" :key="layer.name" :title="layer.name"
-                        :visible="layer.visible">
-      <Sources.OlSourceTileWms :layers="layer.name" :url="layer.url"/>
-    </Layers.OlTileLayer>
+      <!-- 地图控件：图层切换器（展开状态） -->
+      <MapControls.OlLayerswitcherControl :collapsed="false"/>
 
-    <!-- 地图控件：图层切换器（展开状态） -->
-    <MapControls.OlLayerswitcherControl :collapsed="false"/>
+      <!-- 地图控件：缩放控制 -->
+      <MapControls.OlZoomControl/>
 
-    <!-- 地图控件：缩放控制 -->
-    <MapControls.OlZoomControl/>
+      <!-- 地图控件：右键上下文菜单 -->
+      <MapControls.OlContextMenuControl/>
 
-    <!-- 地图控件：右键上下文菜单 -->
-    <MapControls.OlContextMenuControl/>
+      <!-- 地图控件：比例尺 -->
+      <MapControls.OlScalelineControl/>
 
-    <!-- 地图控件：比例尺 -->
-    <MapControls.OlScalelineControl/>
-
-  </Map.OlMap>
+    </Map.OlMap>
+  </div>
 </template>
 
 <script lang="ts" setup>
@@ -157,11 +159,15 @@ onMounted(async () => {
 
 <style scoped>
 /* 地图容器样式 */
+.map-container {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  overflow: hidden;
+}
+
 #map {
   width: 100%;      /* 宽度占满父容器 */
   height: 100%;     /* 高度占满父容器 */
-  position: absolute; /* 绝对定位 */
-  top: 0;           /* 顶部对齐 */
-  left: 0;          /* 左侧对齐 */
 }
 </style>

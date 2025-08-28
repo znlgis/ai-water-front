@@ -1,5 +1,5 @@
 {
-  "name": "openlayers-vue3-demo",
+  "name": "ai-water-front",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -9,8 +9,11 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@element-plus/icons-vue": "^2.3.2",
     "axios": "^1.7.7",
     "base-64": "^1.0.0",
+    "element-plus": "^2.11.1",
+    "pinia": "^3.0.3",
     "vue": "^3.5.6",
     "vue3-openlayers": "^11.2.0"
   },
