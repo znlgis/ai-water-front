@@ -10,11 +10,12 @@
   },
   "dependencies": {
     "vue": "^3.3.4",
-    "ol": "^8.1.0"
+    "ol": "^8.1.0",
+    "axios": "^1.7.2",
+    "base-64": "^1.0.0"
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^4.2.3",
     "vite": "^4.4.5"
   }
 }
-

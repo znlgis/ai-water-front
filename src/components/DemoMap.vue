@@ -12,6 +12,7 @@ import View from 'ol/View'
 import TileLayer from 'ol/layer/Tile'
 import OSM from 'ol/source/OSM'
 import { fromLonLat } from 'ol/proj'
+import { setMap } from '../mapInstance.js'
 
 export default {
   name: 'DemoMap',
@@ -19,20 +20,20 @@ export default {
     const map = ref(null)
 
     onMounted(() => {
-      // 创建基础地图，不包含图层控制器
+      const osmLayer = new TileLayer({
+        source: new OSM(),
+        properties: { name: 'OpenStreetMap', isBase: true }
+      })
+
       map.value = new Map({
         target: 'map',
-        layers: [
-          new TileLayer({
-            name: 'OSM',
-            source: new OSM()
-          })
-        ],
+        layers: [osmLayer],
         view: new View({
           center: fromLonLat([116.4074, 39.9042]), // 北京坐标
           zoom: 10
         })
       })
+      setMap(map.value)
     })
 
     return {

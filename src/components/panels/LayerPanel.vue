@@ -3,247 +3,100 @@
     <div class="panel-header">
       <h3>图层管理</h3>
     </div>
-
     <div class="panel-content">
-      <!-- 基础图层部分 -->
-      <div class="layer-section">
-        <h4>基础图层</h4>
-        <div class="layer-list">
-          <div
-            v-for="baseLayer in baseLayers"
-            :key="baseLayer.id"
-            class="layer-item"
-            :class="{ active: baseLayer.active }"
-            @click="switchBaseLayer(baseLayer)"
-          >
-            <div class="layer-info">
-              <span class="layer-name">{{ baseLayer.name }}</span>
-            </div>
-            <div class="layer-controls">
-              <input
-                type="radio"
-                :checked="baseLayer.active"
-                @change="switchBaseLayer(baseLayer)"
-              />
-            </div>
+      <div class="layer-list">
+        <div
+          v-for="layer in remoteLayers"
+          :key="layer.fullName"
+          class="layer-item"
+        >
+          <div class="layer-info">
+            <input type="checkbox" v-model="layer.visible" @change="toggleLayer(layer)" />
+            <span class="layer-name">{{ layer.name }}</span>
           </div>
         </div>
-      </div>
-
-      <!-- 覆盖图层部分 -->
-      <div class="layer-section">
-        <h4>覆盖图层</h4>
-        <div class="layer-list">
-          <div
-            v-for="overlayLayer in overlayLayers"
-            :key="overlayLayer.id"
-            class="layer-item"
-          >
-            <div class="layer-info">
-              <span class="layer-name">{{ overlayLayer.name }}</span>
-            </div>
-            <div class="layer-controls">
-              <input
-                type="checkbox"
-                v-model="overlayLayer.visible"
-                @change="toggleOverlayLayer(overlayLayer)"
-              />
-              <input
-                type="range"
-                min="0"
-                max="100"
-                v-model="overlayLayer.opacity"
-                @input="updateOpacity(overlayLayer)"
-                class="opacity-slider"
-              />
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- 图层操作按钮 -->
-      <div class="layer-actions">
-        <button @click="addLayer" class="btn btn-primary">添加图层</button>
-        <button @click="removeSelectedLayers" class="btn btn-secondary">删除选中</button>
+        <div v-if="remoteLayers.length===0" class="empty-tip">无可用图层或正在加载...</div>
       </div>
     </div>
   </div>
 </template>
 
 <script>
-import { ref, reactive } from 'vue'
+import { reactive, onMounted } from 'vue'
+import GeoServerRestApi from '../../geoserver/GeoServerRestApi.js'
+import { mapInstance } from '../../mapInstance.js'
+import TileLayer from 'ol/layer/Tile'
+import TileWMS from 'ol/source/TileWMS'
 
 export default {
   name: 'LayerPanel',
   setup() {
-    // 基础图层数据
-    const baseLayers = reactive([
-      { id: 1, name: 'OpenStreetMap', active: true, type: 'OSM' },
-      { id: 2, name: '卫星影像', active: false, type: 'Satellite' },
-      { id: 3, name: '地形图', active: false, type: 'Terrain' }
-    ])
+    // 远程 GeoServer 图层（不含 OSM 底图）
+    const remoteLayers = reactive([])
+    const api = new GeoServerRestApi()
+    // 缓存已创建的 OL 图层对象，key = fullName(workspace:layer)
+    const layerCache = new Map()
 
-    // 覆盖图层数据
-    const overlayLayers = reactive([
-      { id: 1, name: '水质监测点', visible: true, opacity: 80, type: 'WMS' },
-      { id: 2, name: '河流水系', visible: false, opacity: 60, type: 'Vector' },
-      { id: 3, name: '污染源分布', visible: false, opacity: 70, type: 'WFS' }
-    ])
+    const fetchLayers = async () => {
+      try {
+        const data = await api.layers.getLayers()
+        const list = data?.layers?.layer || []
+        remoteLayers.splice(0, remoteLayers.length)
+        list.forEach(l => {
+          const fullName = l.name
+          const simpleName = fullName.includes(':') ? fullName.split(':')[1] : fullName
+          if (simpleName === 'OpenStreetMap') return // 跳过与底图同名的图层
+          remoteLayers.push({ fullName, name: simpleName, visible: false })
+        })
+      } catch (e) {
+        console.error('加载图层失败', e)
+      }
+    }
 
-    // 切换基础图层
-    const switchBaseLayer = (selectedLayer) => {
-      baseLayers.forEach(layer => {
-        layer.active = layer.id === selectedLayer.id
+    const createLayerIfNeeded = (layer) => {
+      if (layerCache.has(layer.fullName)) return layerCache.get(layer.fullName)
+      const olLayer = new TileLayer({
+        source: new TileWMS({
+          url: '/geoserver/wms',
+            params: { LAYERS: layer.fullName, TILED: true, VERSION: '1.1.1' },
+            serverType: 'geoserver',
+            transition: 0
+        }),
+        properties: { name: layer.fullName }
       })
-      console.log('切换基础图层:', selectedLayer.name)
+      layerCache.set(layer.fullName, olLayer)
+      return olLayer
     }
 
-    // 切换覆盖图层可见性
-    const toggleOverlayLayer = (layer) => {
-      console.log('切换图层可见性:', layer.name, layer.visible)
+    const toggleLayer = (layer) => {
+      if (!mapInstance) return
+      const olLayer = createLayerIfNeeded(layer)
+      const layersCollection = mapInstance.getLayers()
+      if (layer.visible) {
+        // 添加到最上方（保持 OSM 在最底层 index 0）
+        layersCollection.push(olLayer)
+      } else {
+        layersCollection.remove(olLayer)
+      }
     }
 
-    // 更新图层透明度
-    const updateOpacity = (layer) => {
-      console.log('更新图层透明度:', layer.name, layer.opacity)
-    }
+    onMounted(fetchLayers)
 
-    // 添加新图层
-    const addLayer = () => {
-      console.log('添加新图层')
-    }
-
-    // 删除选中图层
-    const removeSelectedLayers = () => {
-      console.log('删除选中图层')
-    }
-
-    return {
-      baseLayers,
-      overlayLayers,
-      switchBaseLayer,
-      toggleOverlayLayer,
-      updateOpacity,
-      addLayer,
-      removeSelectedLayers
-    }
+    return { remoteLayers, toggleLayer }
   }
 }
 </script>
 
 <style scoped>
-.layer-panel {
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-}
-
-.panel-header {
-  padding: 16px;
-  border-bottom: 1px solid #ddd;
-  background-color: #fff;
-}
-
-.panel-header h3 {
-  margin: 0;
-  font-size: 16px;
-  color: #333;
-}
-
-.panel-content {
-  flex: 1;
-  padding: 16px;
-  overflow-y: auto;
-}
-
-.layer-section {
-  margin-bottom: 24px;
-}
-
-.layer-section h4 {
-  margin: 0 0 12px 0;
-  font-size: 14px;
-  color: #666;
-  font-weight: 500;
-}
-
-.layer-list {
-  border: 1px solid #e1e5e9;
-  border-radius: 4px;
-  background-color: #fff;
-}
-
-.layer-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 12px;
-  border-bottom: 1px solid #e1e5e9;
-  cursor: pointer;
-  transition: background-color 0.2s;
-}
-
-.layer-item:last-child {
-  border-bottom: none;
-}
-
-.layer-item:hover {
-  background-color: #f8f9fa;
-}
-
-.layer-item.active {
-  background-color: #e3f2fd;
-}
-
-.layer-info {
-  flex: 1;
-}
-
-.layer-name {
-  font-size: 14px;
-  color: #333;
-}
-
-.layer-controls {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.opacity-slider {
-  width: 60px;
-}
-
-.layer-actions {
-  margin-top: 16px;
-  display: flex;
-  gap: 8px;
-}
-
-.btn {
-  padding: 8px 16px;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 12px;
-  transition: background-color 0.2s;
-}
-
-.btn-primary {
-  background-color: #007bff;
-  color: white;
-}
-
-.btn-primary:hover {
-  background-color: #0056b3;
-}
-
-.btn-secondary {
-  background-color: #6c757d;
-  color: white;
-}
-
-.btn-secondary:hover {
-  background-color: #545b62;
-}
+.layer-panel { height: 100%; display: flex; flex-direction: column; }
+.panel-header { padding: 16px; border-bottom: 1px solid #ddd; background-color: #fff; }
+.panel-header h3 { margin: 0; font-size: 16px; color: #333; }
+.panel-content { flex: 1; padding: 16px; overflow-y: auto; }
+.layer-list { border: 1px solid #e1e5e9; border-radius: 4px; background-color: #fff; }
+.layer-item { display: flex; align-items: center; padding: 12px; border-bottom: 1px solid #e1e5e9; }
+.layer-item:last-child { border-bottom: none; }
+.layer-item:hover { background-color: #f8f9fa; }
+.layer-info { flex: 1; display: flex; align-items: center; gap: 8px; }
+.layer-name { font-size: 14px; color: #333; }
+.empty-tip { padding: 12px; font-size: 12px; color: #888; text-align: center; }
 </style>
