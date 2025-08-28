@@ -25,7 +25,7 @@ export function extractGeoJsonFromResponse(responseText) {
       parsedData = JSON.parse(responseText)
     } catch (e) {
       // 如果整个响应不是JSON，查找其中的JSON片段
-      const jsonPattern = /\{[^{}]*"geom"[^{}]*\}/g
+      const jsonPattern = /\{[^{}]*"geom"[^{}]*\{[^{}]*\}[^{}]*\}/g
       const matches = responseText.match(jsonPattern)
       if (matches && matches.length > 0) {
         try {
@@ -35,7 +35,19 @@ export function extractGeoJsonFromResponse(responseText) {
           return null
         }
       } else {
-        return null
+        // 尝试更简单的模式匹配
+        const simplePattern = /\{.*?"geom".*?\}/
+        const simpleMatch = responseText.match(simplePattern)
+        if (simpleMatch) {
+          try {
+            parsedData = JSON.parse(simpleMatch[0])
+          } catch (e3) {
+            console.warn('无法解析简单JSON片段:', simpleMatch[0])
+            return null
+          }
+        } else {
+          return null
+        }
       }
     }
 
