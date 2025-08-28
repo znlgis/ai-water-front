@@ -45,7 +45,7 @@
             @blur="onBlur"
             @keydown="onKeyDown"
             @input="autoResize"
-            rows="10"
+            rows="3"
             :disabled="isStreaming"
           ></textarea>
           <div class="ds-actions-right">
@@ -238,8 +238,10 @@ export default {
 .header-actions { display: flex; align-items: center; gap: 10px; }
 .clear-geo-btn { background: #28a745; color: white; border: none; padding: 4px 8px; border-radius: 4px; font-size: 12px; cursor: pointer; }
 .clear-geo-btn:hover { background: #218838; }
-.panel-content { flex: 1; display: flex; flex-direction: column; padding: 16px; }
-.chat-history { flex: 1; overflow-y: auto; margin-bottom: 16px; border: 1px solid #e1e5e9; border-radius: 8px; padding: 12px; background: #f8f9fa; }
+/* 关键调整: 让内容区本身不滚动, 仅聊天区滚动 */
+.panel-content { flex: 1; display: flex; flex-direction: column; padding: 16px; overflow: hidden; }
+/* 关键调整: 允许 flex 子项收缩产生滚动条; 设置最大高度作为上限 */
+.chat-history { flex: 1; min-height: 0; overflow-y: auto; margin-bottom: 16px; border: 1px solid #e1e5e9; border-radius: 8px; padding: 12px; background: #f8f9fa; /* 可选: 若外部容器高度不足, 仍以父级为准 */ }
 .message { margin-bottom: 16px; }
 .message:last-child { margin-bottom: 0; }
 .user-message .message-content { background: #007bff; color: #fff; margin-left: 20%; }

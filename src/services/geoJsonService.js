@@ -16,51 +16,30 @@ import { mapInstance } from '../mapInstance.js'
  * @returns {Object|null} 解析出的GeoJSON对象或null
  */
 export function extractGeoJsonFromResponse(responseText) {
-  if (!responseText || typeof responseText !== 'string') return null
+    if (!responseText || typeof responseText !== 'string') return null
 
-  try {
-    // 尝试直接解析整个响应为JSON
-    let parsedData = null
     try {
-      parsedData = JSON.parse(responseText)
-    } catch (e) {
-      // 如果整个响应不是JSON，查找其中的JSON片段
-      const jsonPattern = /\{[^{}]*"geom"[^{}]*\{[^{}]*\}[^{}]*\}/g
-      const matches = responseText.match(jsonPattern)
-      if (matches && matches.length > 0) {
-        try {
-          parsedData = JSON.parse(matches[0])
-        } catch (e2) {
-          console.warn('无法解析JSON片段:', matches[0])
-          return null
-        }
-      } else {
-        // 尝试更简单的模式匹配
-        const simplePattern = /\{.*?"geom".*?\}/
-        const simpleMatch = responseText.match(simplePattern)
-        if (simpleMatch) {
-          try {
-            parsedData = JSON.parse(simpleMatch[0])
-          } catch (e3) {
-            console.warn('无法解析简单JSON片段:', simpleMatch[0])
-            return null
-          }
-        } else {
-          return null
-        }
-      }
-    }
+        // 尝试直接解析整个响应为JSON
+        let parsedData = null
+        parsedData = JSON.parse(responseText);
 
-    // 检查是否包含geom字段
-    if (parsedData && typeof parsedData === 'object') {
-      return findGeoJsonInObject(parsedData)
-    }
+        let geoJson = [];
+        if (parsedData?.data) {
+            const content = parsedData.data;
+            const parsed = JSON.parse(content);
+            const arr = Array.isArray(parsed) ? parsed : parsed != null ? [parsed] : [];
 
-    return null
-  } catch (error) {
-    console.warn('提取GeoJSON时出错:', error)
-    return null
-  }
+            for (const item of arr) {
+                const geom = item.geom;
+                geoJson.push(JSON.parse(geom));
+            }
+        }
+
+        return geoJson;
+    } catch (error) {
+        console.warn('提取GeoJSON时出错:', error)
+        return null
+    }
 }
 
 /**
@@ -184,24 +163,46 @@ export function displayGeoJsonOnMap(geoJsonData) {
  * @returns {Object} FeatureCollection格式的GeoJSON
  */
 function normalizeToFeatureCollection(geoJsonData) {
-  if (geoJsonData.type === 'FeatureCollection') {
-    return geoJsonData
-  } else if (geoJsonData.type === 'Feature') {
-    return {
-      type: 'FeatureCollection',
-      features: [geoJsonData]
+    // 统一将输入转换成 FeatureCollection
+    const toFeatureCollection = (input) => {
+        if (Array.isArray(input)) {
+            // 输入是 geometry 数组
+            return {
+                type: 'FeatureCollection',
+                features: input
+                    .filter(g => g && g.type && g.coordinates)
+                    .map((g, i) => ({
+                        type: 'Feature',
+                        geometry: g,
+                        properties: { _idx: i }
+                    }))
+            };
+        }
+        if (input.type === 'FeatureCollection') return input;
+        if (input.type === 'Feature') {
+            return { type: 'FeatureCollection', features: [input] };
+        }
+        // 可能是单个 geometry
+        if (input.type && input.coordinates) {
+            return {
+                type: 'FeatureCollection',
+                features: [{
+                    type: 'Feature',
+                    geometry: input,
+                    properties: {}
+                }]
+            };
+        }
+        console.warn('无法识别的GeoJSON输入格式');
+        return null;
+    };
+
+    const featureCollection = toFeatureCollection(geoJsonData);
+    if (!featureCollection || !featureCollection.features.length) {
+        console.warn('没有可渲染的几何数据');
+        return null;
     }
-  } else {
-    // 假设是Geometry对象
-    return {
-      type: 'FeatureCollection',
-      features: [{
-        type: 'Feature',
-        geometry: geoJsonData,
-        properties: {}
-      }]
-    }
-  }
+    return featureCollection;
 }
 
 /**
