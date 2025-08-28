@@ -2,7 +2,10 @@
   <div class="ai-assistant-panel">
     <div class="panel-header">
       <h3>AI 助手</h3>
-      <div class="status" v-if="!hasApiKey">⚠ 未配置 VITE_DIFY_API_KEY</div>
+      <div class="header-actions">
+        <button class="clear-geo-btn" @click="clearGeoJsonFromMap" title="清除地图标记">🗺️ 清除</button>
+        <div class="status" v-if="!hasApiKey">⚠ 未配置 VITE_DIFY_API_KEY</div>
+      </div>
     </div>
 
     <div class="panel-content">
@@ -12,7 +15,12 @@
           v-for="message in messages"
           :key="message.id"
           class="message"
-          :class="{ 'user-message': message.type === 'user', 'ai-message': message.type === 'ai', 'error-message': message.error }"
+          :class="{ 
+            'user-message': message.type === 'user', 
+            'ai-message': message.type === 'ai', 
+            'error-message': message.error,
+            'geo-notification': message.isGeoJsonNotification
+          }"
         >
           <div class="message-content">
             <template v-if="message.error">{{ message.error }}</template>
@@ -61,6 +69,7 @@
 <script>
 import { ref, reactive, nextTick, computed, onMounted } from 'vue'
 import { sendChatMessage } from '../../services/difyClient.js'
+import { displayGeoJsonOnMap, clearGeoJsonLayers } from '../../services/geoJsonService.js'
 
 export default {
   name: 'AIAssistantPanel',
@@ -133,6 +142,22 @@ export default {
             abortCtrl.value = null
             if (!aiMsg.content) aiMsg.error = '发生错误: ' + err.message
         },
+        onGeoJsonDetected: (geoJsonData) => {
+          console.log('检测到GeoJSON数据:', geoJsonData)
+          const layer = displayGeoJsonOnMap(geoJsonData)
+          if (layer) {
+            // 在消息中添加提示
+            const geoMsg = { 
+              id: Date.now() + Math.random(), 
+              type: 'ai', 
+              content: '🗺️ 已在地图上标记GeoJSON数据', 
+              timestamp: new Date(),
+              isGeoJsonNotification: true
+            }
+            messages.push(geoMsg)
+            nextTick(scrollToBottom)
+          }
+        },
         abortSignal: abortCtrl.value.signal,
         stream: true,
         inputs: {},
@@ -162,6 +187,20 @@ export default {
     const onFocus = () => { isFocused.value = true }
     const onBlur = () => { isFocused.value = false }
 
+    const clearGeoJsonFromMap = () => {
+      clearGeoJsonLayers()
+      // 添加一个确认消息
+      const clearMsg = { 
+        id: Date.now() + Math.random(), 
+        type: 'ai', 
+        content: '🗺️ 已清除地图上的所有GeoJSON标记', 
+        timestamp: new Date(),
+        isGeoJsonNotification: true
+      }
+      messages.push(clearMsg)
+      nextTick(scrollToBottom)
+    }
+
     onMounted(() => autoResize())
 
     return {
@@ -184,6 +223,7 @@ export default {
       hasApiKey,
       onFocus,
       onBlur,
+      clearGeoJsonFromMap,
       formatTime: (t) => new Date(t).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
     }
   }
@@ -193,14 +233,18 @@ export default {
 <style scoped>
 /* 保留原聊天区样式 */
 .ai-assistant-panel { height: 100%; display: flex; flex-direction: column; }
-.panel-header { padding: 16px; border-bottom: 1px solid #ddd; background: #fff; }
+.panel-header { padding: 16px; border-bottom: 1px solid #ddd; background: #fff; display: flex; justify-content: space-between; align-items: center; }
 .panel-header h3 { margin: 0; font-size: 16px; color: #333; }
+.header-actions { display: flex; align-items: center; gap: 10px; }
+.clear-geo-btn { background: #28a745; color: white; border: none; padding: 4px 8px; border-radius: 4px; font-size: 12px; cursor: pointer; }
+.clear-geo-btn:hover { background: #218838; }
 .panel-content { flex: 1; display: flex; flex-direction: column; padding: 16px; }
 .chat-history { flex: 1; overflow-y: auto; margin-bottom: 16px; border: 1px solid #e1e5e9; border-radius: 8px; padding: 12px; background: #f8f9fa; }
 .message { margin-bottom: 16px; }
 .message:last-child { margin-bottom: 0; }
 .user-message .message-content { background: #007bff; color: #fff; margin-left: 20%; }
 .ai-message .message-content { background: #fff; color: #333; margin-right: 20%; border: 1px solid #e1e5e9; }
+.ai-message.geo-notification .message-content { background: #e8f5e8; border-color: #28a745; color: #155724; }
 .message-content { padding: 12px; border-radius: 12px; line-height: 1.4; font-size: 14px; word-break: break-word; }
 .message-time { text-align: center; font-size: 12px; color: #666; margin-top: 4px; }
 
