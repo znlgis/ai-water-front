@@ -2,6 +2,7 @@
   <div class="ai-assistant-panel">
     <div class="panel-header">
       <h3>AI 助手</h3>
+      <div class="status" v-if="!hasApiKey">⚠ 未配置 VITE_DIFY_API_KEY</div>
     </div>
 
     <div class="panel-content">
@@ -11,14 +12,20 @@
           v-for="message in messages"
           :key="message.id"
           class="message"
-          :class="{ 'user-message': message.type === 'user', 'ai-message': message.type === 'ai' }"
+          :class="{ 'user-message': message.type === 'user', 'ai-message': message.type === 'ai', 'error-message': message.error }"
         >
-          <div class="message-content">{{ message.content }}</div>
-          <div class="message-time">{{ formatTime(message.timestamp) }}</div>
+          <div class="message-content">
+            <template v-if="message.error">{{ message.error }}</template>
+            <template v-else>{{ message.content }}</template>
+          </div>
+          <div class="message-time">
+            {{ formatTime(message.timestamp) }}
+            <span v-if="message.streaming" class="streaming-dot">●</span>
+          </div>
         </div>
       </div>
 
-      <!-- 仿 DeepSeek 输入区域 -->
+      <!-- 输入区域 -->
       <div class="ds-input-wrapper" :class="{ focused: isFocused }">
         <div class="ds-textarea-container">
           <textarea
@@ -31,18 +38,19 @@
             @keydown="onKeyDown"
             @input="autoResize"
             rows="10"
+            :disabled="isStreaming"
           ></textarea>
           <div class="ds-actions-right">
-            <button class="icon-btn" v-if="inputMessage" @click="clearInput" title="清空">
-              ×
-            </button>
-            <button class="send-btn" :disabled="!canSend" @click="sendMessage">发送</button>
+            <button class="icon-btn" v-if="inputMessage && !isStreaming" @click="clearInput" title="清空">×</button>
+            <button class="cancel-btn" v-if="isStreaming" @click="cancelStream" title="取消">取消</button>
+            <button class="send-btn" :disabled="!canSend || isStreaming || !hasApiKey" @click="sendMessage">发送</button>
           </div>
         </div>
         <div class="ds-footer-row">
           <div class="meta">
             <span class="hint">Enter 发送 · Shift+Enter 换行</span>
             <span class="count" :class="{ warn: remaining < 0 }">{{ inputLength }}/{{ maxLength }}</span>
+            <span v-if="isStreaming" class="streaming-hint">生成中...</span>
           </div>
         </div>
       </div>
@@ -52,6 +60,7 @@
 
 <script>
 import { ref, reactive, nextTick, computed, onMounted } from 'vue'
+import { sendChatMessage } from '../../services/difyClient.js'
 
 export default {
   name: 'AIAssistantPanel',
@@ -61,6 +70,9 @@ export default {
     const textareaRef = ref(null)
     const isFocused = ref(false)
     const maxLength = 4000
+    const isStreaming = ref(false)
+    const abortCtrl = ref(null)
+    const hasApiKey = !!import.meta.env.VITE_DIFY_API_KEY
 
     const messages = reactive([
       { id: 1, type: 'ai', content: '您好！我是AI助手，请问有什么可以帮助您的？', timestamp: new Date() }
@@ -69,7 +81,7 @@ export default {
     const inputLength = computed(() => inputMessage.value.length)
     const remaining = computed(() => maxLength - inputLength.value)
     const canSend = computed(() => inputMessage.value.trim().length > 0 && remaining.value >= 0)
-    const placeholder = '向 AI 提问，Enter 发送，Shift+Enter 换行...'
+    const placeholder = hasApiKey ? '向 AI 提问，Enter 发送，Shift+Enter 换行...' : '缺少 VITE_DIFY_API_KEY，无法调用 Dify API'
 
     const autoResize = () => {
       const el = textareaRef.value
@@ -83,30 +95,62 @@ export default {
     }
 
     const sendMessage = async () => {
-      if (!canSend.value) return
+      if (!canSend.value || isStreaming.value) return
       const content = inputMessage.value.trim()
       const userMessage = { id: Date.now(), type: 'user', content, timestamp: new Date() }
       messages.push(userMessage)
       inputMessage.value = ''
       autoResize()
       await nextTick(); scrollToBottom()
-      // 模拟回复
-      setTimeout(async () => {
-        const aiResponse = { id: Date.now() + 1, type: 'ai', content: generateAIResponse(content), timestamp: new Date() }
-        messages.push(aiResponse)
-        await nextTick(); scrollToBottom()
-      }, 600)
+
+      // 预先插入一个 AI 占位消息
+      const aiMsg = { id: userMessage.id + 1, type: 'ai', content: '', timestamp: new Date(), streaming: true }
+      messages.push(aiMsg)
+      await nextTick(); scrollToBottom()
+
+      isStreaming.value = true
+      abortCtrl.value = new AbortController()
+
+      sendChatMessage(content, {
+        onMessage: (chunk) => {
+          // 兼容 Dify 可能返回累计全文或增量片段
+          if (chunk.startsWith(aiMsg.content) && chunk.length > aiMsg.content.length) {
+            aiMsg.content = chunk // 累计全文
+          } else if (!aiMsg.content.endsWith(chunk)) {
+            aiMsg.content += chunk // 追加增量
+          }
+          nextTick(scrollToBottom)
+        },
+        onCompleted: () => {
+          aiMsg.streaming = false
+          isStreaming.value = false
+          abortCtrl.value = null
+          nextTick(scrollToBottom)
+        },
+        onError: (err) => {
+          aiMsg.streaming = false
+            isStreaming.value = false
+            abortCtrl.value = null
+            if (!aiMsg.content) aiMsg.error = '发生错误: ' + err.message
+        },
+        abortSignal: abortCtrl.value.signal,
+        stream: true,
+        inputs: {},
+        user: 'web-user'
+      })
+    }
+
+    const cancelStream = () => {
+      if (abortCtrl.value) {
+        abortCtrl.value.abort()
+      }
     }
 
     const onKeyDown = (e) => {
       if (e.key === 'Enter') {
-        if (e.shiftKey) {
-          // 允许换行
-          return
-        } else {
-          e.preventDefault()
-          sendMessage()
-        }
+        if (e.shiftKey) return
+        e.preventDefault()
+        sendMessage()
       }
     }
 
@@ -115,23 +159,8 @@ export default {
       autoResize()
     }
 
-    const quickInsert = (text) => {
-      inputMessage.value = text
-      autoResize()
-      nextTick(() => textareaRef.value && textareaRef.value.focus())
-    }
-
     const onFocus = () => { isFocused.value = true }
     const onBlur = () => { isFocused.value = false }
-
-    const generateAIResponse = (input) => {
-      const responses = {
-        '水质分析': '水质总体良好：pH 正常，溶解氧偏低 0.5mg/L，建议加强复氧。',
-        '污染源识别': '疑似上游 500m 工业排口与支流交汇处存在异常 COD 峰值。',
-        '监测建议': '建议新增 2 个断面：上游支流入口；下游 1km 敏感取水点。'
-      }
-      return responses[input] || `已收到：${input}，正在分析相关数据...`
-    }
 
     onMounted(() => autoResize())
 
@@ -147,10 +176,14 @@ export default {
       canSend,
       placeholder,
       sendMessage,
-      quickInsert,
       onKeyDown,
       autoResize,
       clearInput,
+      isStreaming,
+      cancelStream,
+      hasApiKey,
+      onFocus,
+      onBlur,
       formatTime: (t) => new Date(t).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
     }
   }
@@ -184,11 +217,15 @@ export default {
 .send-btn:disabled { background: #b5c3d1; cursor: not-allowed; }
 .send-btn:not(:disabled):hover { background: #0062cc; }
 .ds-footer-row { margin-top: 6px; display: flex; justify-content: space-between; align-items: center; }
-.tips { display: flex; gap: 6px; flex-wrap: wrap; }
-.tip-chip { background: #eef1f4; border: 1px solid #d8dde2; font-size: 12px; padding: 4px 10px; border-radius: 14px; cursor: pointer; color: #4a5660; transition: all .2s; user-select: none; }
-.tip-chip:hover { background: #e3e8ec; border-color: #b5c0c9; }
 .meta { display: flex; gap: 10px; align-items: center; font-size: 12px; color: #6b7480; }
 .count { font-variant-numeric: tabular-nums; }
 .count.warn { color: #d93025; }
 .hint { color: #98a2ae; }
+.error-message .message-content { background: #ffecec; color: #b40000; border: 1px solid #f5b5b5; }
+.streaming-dot { color: #0a84ff; margin-left: 4px; animation: blink 1s infinite; font-size: 10px; }
+.streaming-hint { color: #0a84ff; animation: blink 1s infinite; }
+.cancel-btn { border: none; background: #ffb347; color: #fff; padding: 6px 10px; border-radius: 8px; font-size: 13px; cursor: pointer; }
+.cancel-btn:hover { background: #ff9f1a; }
+.status { font-size: 12px; color: #d35400; margin-left: 12px; }
+@keyframes blink { 0%,100% { opacity: 1 } 50% { opacity: 0.2 } }
 </style>
