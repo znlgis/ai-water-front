@@ -4,6 +4,8 @@
 // VITE_DIFY_API_KEY=xxx
 // 可选：VITE_DIFY_BASE_URL=https://api.dify.ai
 
+import { extractGeoJsonFromResponse } from './geoJsonService.js'
+
 const API_KEY = import.meta.env.VITE_DIFY_API_KEY
 const BASE_URL = (import.meta.env.VITE_DIFY_BASE_URL || 'https://api.dify.ai').replace(/\/$/, '')
 
@@ -20,6 +22,7 @@ if (!API_KEY) {
  * @param {(chunk:string)=>void} opt.onMessage 流式增量文本
  * @param {()=>void} opt.onCompleted 完成
  * @param {(err:Error)=>void} opt.onError 错误
+ * @param {(geoJson:Object)=>void} opt.onGeoJsonDetected 检测到GeoJSON时的回调
  * @param {AbortSignal} opt.abortSignal 取消信号
  * @param {Object} opt.inputs 传给工作流 / Agent 的自定义变量
  * @param {boolean} opt.stream 是否使用流（默认 true）
@@ -30,6 +33,7 @@ export async function sendChatMessage(query, opt = {}) {
     onMessage = () => {},
     onCompleted = () => {},
     onError = () => {},
+    onGeoJsonDetected = () => {},
     abortSignal,
     inputs = {},
     stream = true,
@@ -66,6 +70,7 @@ export async function sendChatMessage(query, opt = {}) {
       const reader = resp.body.getReader()
       const decoder = new TextDecoder('utf-8')
       let buffer = ''
+      let fullResponseText = '' // 累积完整的响应文本
       while (true) {
         const { value, done } = await reader.read()
         if (done) break
@@ -79,6 +84,11 @@ export async function sendChatMessage(query, opt = {}) {
           if (line.startsWith('data:')) {
             const dataStr = line.slice(5).trim()
             if (dataStr === '[DONE]') {
+              // 在流结束时检查GeoJSON
+              const geoJsonData = extractGeoJsonFromResponse(fullResponseText)
+              if (geoJsonData) {
+                onGeoJsonDetected(geoJsonData)
+              }
               onCompleted()
               return
             }
@@ -86,12 +96,20 @@ export async function sendChatMessage(query, opt = {}) {
               const json = JSON.parse(dataStr)
               // Dify 流事件：{"event":"message","answer":"..."}
               const answer = json.answer || ''
-              if (answer) onMessage(answer)
+              if (answer) {
+                fullResponseText += answer // 累积响应文本
+                onMessage(answer)
+              }
             } catch (e) {
               // 忽略单行解析错误
             }
           }
         }
+      }
+      // 流结束时再次检查GeoJSON（防止遗漏）
+      const geoJsonData = extractGeoJsonFromResponse(fullResponseText)
+      if (geoJsonData) {
+        onGeoJsonDetected(geoJsonData)
       }
       onCompleted()
     } else {
@@ -105,7 +123,14 @@ export async function sendChatMessage(query, opt = {}) {
         signal: abortSignal
       })
       const json = await resp.json()
-      if (json && json.answer) onMessage(json.answer)
+      if (json && json.answer) {
+        onMessage(json.answer)
+        // 检查GeoJSON
+        const geoJsonData = extractGeoJsonFromResponse(json.answer)
+        if (geoJsonData) {
+          onGeoJsonDetected(geoJsonData)
+        }
+      }
       onCompleted()
     }
   } catch (err) {

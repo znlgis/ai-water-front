@@ -31,6 +31,10 @@ import LayerPanel from './components/panels/LayerPanel.vue'
 import AIAssistantPanel from './components/panels/AIAssistantPanel.vue'
 import AppFooter from './components/layout/AppFooter.vue'
 import { ref, onMounted, onBeforeUnmount } from 'vue'
+// 开发模式下加载测试工具
+if (import.meta.env.DEV) {
+  import('./utils/geoJsonTestUtils.js')
+}
 
 export default {
   name: 'App',
